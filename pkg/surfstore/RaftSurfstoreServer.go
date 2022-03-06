@@ -2,8 +2,9 @@ package surfstore
 
 import (
 	context "context"
-	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	"sync"
+
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 type RaftSurfstore struct {
@@ -13,6 +14,13 @@ type RaftSurfstore struct {
 	log      []*UpdateOperation
 
 	metaStore *MetaStore
+
+	commitIndex    int64
+	pendingCommits []chan bool
+
+	ip       string
+	ipList   []string
+	serverId int64
 
 	/*--------------- Chaos Monkey --------------*/
 	isCrashed      bool
