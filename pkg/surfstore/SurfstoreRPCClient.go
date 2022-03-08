@@ -109,7 +109,7 @@ func (surfClient *RPCClient) UpdateFile(fileMetaData *FileMetaData, latestVersio
 		}
 		c := NewRaftSurfstoreClient(conn)
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*100)
 		defer cancel()
 		server_version, err := c.UpdateFile(ctx, fileMetaData)
 		if err != nil {
@@ -118,8 +118,9 @@ func (surfClient *RPCClient) UpdateFile(fileMetaData *FileMetaData, latestVersio
 				continue
 			}
 			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
-				return err
+				continue
 			}
+			fmt.Println(err)
 			return err
 		}
 

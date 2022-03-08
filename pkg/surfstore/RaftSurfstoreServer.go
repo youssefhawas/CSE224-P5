@@ -2,8 +2,8 @@ package surfstore
 
 import (
 	context "context"
-	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -159,7 +159,6 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 			prevlogterm = s.log[entryIdx-1].Term
 		}
 		// TODO create correct AppendEntryInput from s.nextIndex, etc
-		fmt.Println(s.log[entryIdx:])
 		input := &AppendEntryInput{
 			Term:         s.term,
 			PrevLogTerm:  prevlogterm,
@@ -170,18 +169,21 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		output, _ := client.AppendEntries(ctx, input)
-		if output.Success {
-			commitChan <- output
-			return
+		output, err := client.AppendEntries(ctx, input)
+		if err != nil {
+			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				continue
+			}
 		}
-		// TODO update state. s.nextIndex, etc
-		if !output.Success {
-			s.next_indices[serverIdx] = s.next_indices[serverIdx] - 1
-			continue
+		if output != nil {
+			if output.Success {
+				commitChan <- output
+				return
+			} else {
+				s.next_indices[serverIdx] = s.next_indices[serverIdx] - 1
+				continue
+			}
 		}
-
-		// TODO handle crashed/ non success cases
 	}
 }
 
@@ -194,56 +196,59 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 //5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index
 //of last new entry)
 func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInput) (*AppendEntryOutput, error) {
-
-	output := &AppendEntryOutput{
-		Success:      false,
-		MatchedIndex: -1,
-	}
-
-	if input.Term > s.term {
-		s.term = input.Term
-		s.isLeader = false
-
-	}
-
-	if len(input.Entries) != 0 {
-		if int64(len(s.log)) <= input.PrevLogIndex {
-			return output, nil
+	if s.isCrashed {
+		return nil, ERR_SERVER_CRASHED
+	} else {
+		output := &AppendEntryOutput{
+			Success:      false,
+			MatchedIndex: -1,
 		}
 
-		//1. Reply false if term < currentTerm (§5.1)
-		if input.Term < s.term {
-			return output, nil
+		if input.Term > s.term {
+			s.term = input.Term
+			s.isLeader = false
+
 		}
-		//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
-		//matches prevLogTerm (§5.3)
-		if input.PrevLogIndex > 0 {
-			if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
+
+		if len(input.Entries) != 0 {
+			if int64(len(s.log)) <= input.PrevLogIndex {
 				return output, nil
 			}
+
+			//1. Reply false if term < currentTerm (§5.1)
+			if input.Term < s.term {
+				return output, nil
+			}
+			//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
+			//matches prevLogTerm (§5.3)
+			if input.PrevLogIndex > 0 {
+				if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
+					return output, nil
+				}
+			}
+			//3. If an existing entry conflicts with a new one (same index but different
+			//terms), delete the existing entry and all that follow it (§5.3)
+			s.log = s.log[:input.PrevLogIndex+1]
+			//4. Append any new entries not already in the log
+			s.log = append(s.log, input.Entries...)
 		}
-		//3. If an existing entry conflicts with a new one (same index but different
-		//terms), delete the existing entry and all that follow it (§5.3)
-		s.log = s.log[:input.PrevLogIndex+1]
-		//4. Append any new entries not already in the log
-		s.log = append(s.log, input.Entries...)
-	}
-	//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index
-	//of last new entry)
-	// TODO only do this if leaderCommit > commitIndex
-	if input.LeaderCommit > s.commitIndex {
-		s.commitIndex = int64(math.Min(float64(input.LeaderCommit), float64(len(s.log)-1)))
-	}
+		//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index
+		//of last new entry)
+		// TODO only do this if leaderCommit > commitIndex
+		if input.LeaderCommit > s.commitIndex {
+			s.commitIndex = int64(math.Min(float64(input.LeaderCommit), float64(len(s.log)-1)))
+		}
 
-	for s.lastApplied < s.commitIndex {
-		s.lastApplied++
-		entry := s.log[s.lastApplied]
-		s.metaStore.UpdateFile(ctx, entry.FileMetaData)
+		for s.lastApplied < s.commitIndex {
+			s.lastApplied++
+			entry := s.log[s.lastApplied]
+			s.metaStore.UpdateFile(ctx, entry.FileMetaData)
+		}
+
+		output.Success = true
+
+		return output, nil
 	}
-
-	output.Success = true
-
-	return output, nil
 }
 
 // This should set the leader status and any related variables as if the node has just won an election
