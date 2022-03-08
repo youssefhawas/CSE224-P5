@@ -235,17 +235,18 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		}
 
 		if len(input.Entries) != 0 {
-			if int64(len(s.log)) <= input.PrevLogIndex {
-				return output, nil
-			}
+			if input.PrevLogIndex >= 0 {
+				if int64(len(s.log)) <= input.PrevLogIndex {
+					return output, nil
+				}
 
-			//1. Reply false if term < currentTerm (§5.1)
-			if input.Term < s.term {
-				return output, nil
-			}
-			//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
-			//matches prevLogTerm (§5.3)
-			if input.PrevLogIndex > 0 {
+				//1. Reply false if term < currentTerm (§5.1)
+				if input.Term < s.term {
+					return output, nil
+				}
+				//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
+				//matches prevLogTerm (§5.3)
+
 				if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
 					return output, nil
 				}
