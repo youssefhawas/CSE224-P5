@@ -237,7 +237,7 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		//of last new entry)
 		// TODO only do this if leaderCommit > commitIndex
 		if input.LeaderCommit > s.commitIndex {
-			s.commitIndex = int64(math.Min(float64(input.LeaderCommit), float64(len(s.log)-1)))
+			s.commitIndex = int64(math.Min(float64(input.LeaderCommit), float64(len(s.log))))
 		}
 
 		for s.lastApplied < s.commitIndex {
