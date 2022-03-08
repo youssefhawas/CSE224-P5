@@ -3,6 +3,7 @@ package surfstore
 import (
 	context "context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -109,7 +110,7 @@ func (surfClient *RPCClient) UpdateFile(fileMetaData *FileMetaData, latestVersio
 		}
 		c := NewRaftSurfstoreClient(conn)
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*100)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		server_version, err := c.UpdateFile(ctx, fileMetaData)
 		if err != nil {
@@ -120,8 +121,9 @@ func (surfClient *RPCClient) UpdateFile(fileMetaData *FileMetaData, latestVersio
 			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
 				continue
 			}
-			fmt.Println(err)
-			return err
+			if strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+				os.Exit(1)
+			}
 		}
 
 		*latestVersion = server_version.Version
