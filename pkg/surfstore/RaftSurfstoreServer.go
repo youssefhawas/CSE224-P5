@@ -101,6 +101,7 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 
 		success := <-committed
 		if success {
+			s.lastApplied++
 			return s.metaStore.UpdateFile(ctx, filemeta)
 		}
 
@@ -144,10 +145,16 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 		}
 		client := NewRaftSurfstoreClient(conn)
 
+		var prevlogterm int64
+		if entryIdx-1 < 0 {
+			prevlogterm = 0
+		} else {
+			prevlogterm = s.log[entryIdx-1].Term
+		}
 		// TODO create correct AppendEntryInput from s.nextIndex, etc
 		input := &AppendEntryInput{
 			Term:         s.term,
-			PrevLogTerm:  -1,
+			PrevLogTerm:  prevlogterm,
 			PrevLogIndex: entryIdx - 1,
 			Entries:      s.log[entryIdx:],
 			LeaderCommit: s.commitIndex,
@@ -159,8 +166,6 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 		if output.Success {
 			commitChan <- output
 			return
-		} else {
-
 		}
 		// TODO update state. s.nextIndex, etc
 		if !output.Success {
@@ -187,8 +192,13 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		MatchedIndex: -1,
 	}
 
+	if int64(len(s.log)) <= input.PrevLogIndex {
+		return output, nil
+	}
+
 	if input.Term > s.term {
 		s.term = input.Term
+		s.isLeader = false
 	}
 
 	//1. Reply false if term < currentTerm (§5.1)
@@ -197,23 +207,16 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 	}
 	//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
 	//matches prevLogTerm (§5.3)
-	// if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
-	// 	return output, nil
-	// }
+	if input.PrevLogIndex > 0 {
+		if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
+			return output, nil
+		}
+	}
 	//3. If an existing entry conflicts with a new one (same index but different
 	//terms), delete the existing entry and all that follow it (§5.3)
-	// index := input.PrevLogIndex + 1
-	// entry_ind := 0
-	// for index = input.PrevLogIndex + 1; index < int64(len(s.log)); index++ {
-	// 	if s.log[index].Term != input.Entries[entry_ind].Term {
-	// 		s.log = s.log[:index-1]
-	// 		break
-	// 	}
-	// 	entry_ind++
-	// }
+	s.log = s.log[:input.PrevLogIndex+1]
 	//4. Append any new entries not already in the log
 	s.log = append(s.log, input.Entries...)
-
 	//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index
 	//of last new entry)
 	// TODO only do this if leaderCommit > commitIndex
@@ -253,12 +256,18 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 				return nil, nil
 			}
 			client := NewRaftSurfstoreClient(conn)
-
+			entryIdx := s.commitIndex + 1
+			var prevlogterm int64
+			if entryIdx-1 < 0 {
+				prevlogterm = 0
+			} else {
+				prevlogterm = s.log[entryIdx-1].Term
+			}
 			// TODO create correct AppendEntryInput from s.nextIndex, etc
 			input := &AppendEntryInput{
 				Term:         s.term,
-				PrevLogTerm:  -1,
-				PrevLogIndex: -1,
+				PrevLogTerm:  prevlogterm,
+				PrevLogIndex: entryIdx - 1,
 				// TODO figure out which entries to send
 				Entries:      make([]*UpdateOperation, 0),
 				LeaderCommit: s.commitIndex,
