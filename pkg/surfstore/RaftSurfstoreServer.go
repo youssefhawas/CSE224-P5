@@ -2,6 +2,7 @@ package surfstore
 
 import (
 	context "context"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -47,21 +48,41 @@ type RaftSurfstore struct {
 
 func (s *RaftSurfstore) checkUp(server_ip string, up_channel chan bool) {
 	for {
-		_, err := grpc.Dial(server_ip, grpc.WithInsecure())
+		conn, err := grpc.Dial(server_ip, grpc.WithInsecure())
 		if err != nil {
-			continue
+			return
 		}
-		up_channel <- true
-		return
+		client := NewRaftSurfstoreClient(conn)
+		input := &AppendEntryInput{
+			Term:         s.term,
+			PrevLogTerm:  0,
+			PrevLogIndex: 0,
+			Entries:      make([]*UpdateOperation, 0),
+			LeaderCommit: s.commitIndex,
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err = client.AppendEntries(ctx, input)
+		if err != nil {
+			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				continue
+			}
+		} else {
+			fmt.Println(server_ip)
+			up_channel <- true
+			return
+		}
 	}
 }
 
 func (s *RaftSurfstore) GetFileInfoMap(ctx context.Context, empty *emptypb.Empty) (*FileInfoMap, error) {
 	up_channel := make(chan bool)
 	if s.isLeader {
+		fmt.Printf("LEADER IP %v\n", s.ip)
 		up_count := 1
-		for _, ip := range s.ipList {
-			if ip != s.ip {
+		for idx, ip := range s.ipList {
+			if s.serverId != int64(idx) {
 				go s.checkUp(ip, up_channel)
 			}
 		}

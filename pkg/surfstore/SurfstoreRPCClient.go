@@ -94,6 +94,9 @@ func (surfClient *RPCClient) GetFileInfoMap(serverFileInfoMap *map[string]*FileM
 			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
 				return err
 			}
+			if strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+				os.Exit(1)
+			}
 		}
 		*serverFileInfoMap = remote_index.FileInfoMap
 
@@ -151,6 +154,9 @@ func (surfClient *RPCClient) GetBlockStoreAddr(blockStoreAddr *string) error {
 			}
 			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
 				return err
+			}
+			if strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+				os.Exit(1)
 			}
 		}
 		*blockStoreAddr = addr.Addr
