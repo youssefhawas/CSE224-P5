@@ -90,6 +90,9 @@ func (s *RaftSurfstore) GetBlockStoreAddr(ctx context.Context, empty *emptypb.Em
 }
 
 func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) (*Version, error) {
+	if s.isCrashed {
+		return nil, ERR_SERVER_CRASHED
+	}
 	if s.isLeader {
 		op := UpdateOperation{
 			Term:         s.term,
