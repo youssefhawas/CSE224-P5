@@ -2,7 +2,6 @@ package surfstore
 
 import (
 	context "context"
-	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -69,7 +68,6 @@ func (s *RaftSurfstore) checkUp(server_ip string, up_channel chan bool) {
 				continue
 			}
 		} else {
-			fmt.Println(server_ip)
 			up_channel <- true
 			return
 		}
@@ -79,7 +77,6 @@ func (s *RaftSurfstore) checkUp(server_ip string, up_channel chan bool) {
 func (s *RaftSurfstore) GetFileInfoMap(ctx context.Context, empty *emptypb.Empty) (*FileInfoMap, error) {
 	up_channel := make(chan bool)
 	if s.isLeader {
-		fmt.Printf("LEADER IP %v\n", s.ip)
 		up_count := 1
 		for idx, ip := range s.ipList {
 			if s.serverId != int64(idx) {
@@ -121,6 +118,11 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 		}
 
 		s.log = append(s.log, &op)
+
+		for len(s.pendingCommits) <= int(s.commitIndex) {
+			s.pendingCommits = append(s.pendingCommits, make(chan bool))
+		}
+
 		committed := make(chan bool)
 		s.pendingCommits = append(s.pendingCommits, committed)
 
