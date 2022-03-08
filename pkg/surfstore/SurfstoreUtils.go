@@ -2,7 +2,6 @@ package surfstore
 
 import (
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"math"
@@ -152,7 +151,6 @@ func ClientSync(client RPCClient) {
 	block_size := client.BlockSize
 	block_store_addr := &BlockStoreAddr{}
 	err := client.GetBlockStoreAddr(&block_store_addr.Addr)
-	fmt.Println(block_store_addr.Addr)
 	if err != nil {
 		log.Printf("Received error while gettting block store address %v", err)
 	}

@@ -86,11 +86,13 @@ func (surfClient *RPCClient) GetFileInfoMap(serverFileInfoMap *map[string]*FileM
 		defer cancel()
 		remote_index, err := c.GetFileInfoMap(ctx, &emptypb.Empty{})
 		if err != nil {
-			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) || strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) {
 				conn.Close()
 				continue
 			}
-			return err
+			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				return err
+			}
 		}
 		*serverFileInfoMap = remote_index.FileInfoMap
 
@@ -111,9 +113,12 @@ func (surfClient *RPCClient) UpdateFile(fileMetaData *FileMetaData, latestVersio
 		defer cancel()
 		server_version, err := c.UpdateFile(ctx, fileMetaData)
 		if err != nil {
-			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) || strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) {
 				conn.Close()
 				continue
+			}
+			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				return err
 			}
 			return err
 		}
@@ -137,11 +142,13 @@ func (surfClient *RPCClient) GetBlockStoreAddr(blockStoreAddr *string) error {
 		defer cancel()
 		addr, err := c.GetBlockStoreAddr(ctx, &emptypb.Empty{})
 		if err != nil {
-			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) || strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) {
 				conn.Close()
 				continue
 			}
-			return err
+			if strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				return err
+			}
 		}
 		*blockStoreAddr = addr.Addr
 
