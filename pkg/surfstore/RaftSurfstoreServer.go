@@ -178,6 +178,7 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 		if output != nil {
 			if output.Success {
 				commitChan <- output
+				s.next_indices[serverIdx] = s.next_indices[serverIdx] + int64(len(s.log[entryIdx:]))
 				return
 			} else {
 				s.next_indices[serverIdx] = s.next_indices[serverIdx] - 1

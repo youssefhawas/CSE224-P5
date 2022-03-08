@@ -63,6 +63,7 @@ func NewRaftServer(id int64, ips []string, blockStoreAddr string) (*RaftSurfstor
 		isLeader:       false,
 		term:           0,
 		metaStore:      NewMetaStore(blockStoreAddr),
+		pendingCommits: make([]chan bool, 0),
 		log:            make([]*UpdateOperation, 0),
 		isCrashed:      false,
 		notCrashedCond: sync.NewCond(&isCrashedMutex),
