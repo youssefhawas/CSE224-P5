@@ -2,6 +2,7 @@ package surfstore
 
 import (
 	context "context"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -27,6 +28,8 @@ type RaftSurfstore struct {
 	ip       string
 	ipList   []string
 	serverId int64
+
+	next_indices []int64
 
 	// Leader protection
 	isLeaderMutex sync.RWMutex
@@ -138,6 +141,7 @@ func (s *RaftSurfstore) attemptCommit() {
 
 func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *AppendEntryOutput) {
 	for {
+		entryIdx = s.next_indices[serverIdx]
 		addr := s.ipList[serverIdx]
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
 		if err != nil {
@@ -152,6 +156,7 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 			prevlogterm = s.log[entryIdx-1].Term
 		}
 		// TODO create correct AppendEntryInput from s.nextIndex, etc
+		fmt.Println(s.log[entryIdx:])
 		input := &AppendEntryInput{
 			Term:         s.term,
 			PrevLogTerm:  prevlogterm,
@@ -169,7 +174,7 @@ func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *
 		}
 		// TODO update state. s.nextIndex, etc
 		if !output.Success {
-			entryIdx = entryIdx - 1
+			s.next_indices[serverIdx] = s.next_indices[serverIdx] - 1
 			continue
 		}
 
@@ -192,31 +197,34 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 		MatchedIndex: -1,
 	}
 
-	if int64(len(s.log)) <= input.PrevLogIndex {
-		return output, nil
-	}
-
 	if input.Term > s.term {
 		s.term = input.Term
 		s.isLeader = false
+
 	}
 
-	//1. Reply false if term < currentTerm (§5.1)
-	if input.Term < s.term {
-		return output, nil
-	}
-	//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
-	//matches prevLogTerm (§5.3)
-	if input.PrevLogIndex > 0 {
-		if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
+	if len(input.Entries) != 0 {
+		if int64(len(s.log)) <= input.PrevLogIndex {
 			return output, nil
 		}
+
+		//1. Reply false if term < currentTerm (§5.1)
+		if input.Term < s.term {
+			return output, nil
+		}
+		//2. Reply false if log doesn’t contain an entry at prevLogIndex whose term
+		//matches prevLogTerm (§5.3)
+		if input.PrevLogIndex > 0 {
+			if s.log[input.PrevLogIndex].Term != input.PrevLogTerm {
+				return output, nil
+			}
+		}
+		//3. If an existing entry conflicts with a new one (same index but different
+		//terms), delete the existing entry and all that follow it (§5.3)
+		s.log = s.log[:input.PrevLogIndex+1]
+		//4. Append any new entries not already in the log
+		s.log = append(s.log, input.Entries...)
 	}
-	//3. If an existing entry conflicts with a new one (same index but different
-	//terms), delete the existing entry and all that follow it (§5.3)
-	s.log = s.log[:input.PrevLogIndex+1]
-	//4. Append any new entries not already in the log
-	s.log = append(s.log, input.Entries...)
 	//5. If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index
 	//of last new entry)
 	// TODO only do this if leaderCommit > commitIndex
@@ -239,6 +247,11 @@ func (s *RaftSurfstore) AppendEntries(ctx context.Context, input *AppendEntryInp
 func (s *RaftSurfstore) SetLeader(ctx context.Context, _ *emptypb.Empty) (*Success, error) {
 	s.term++
 	s.isLeader = true
+	for id := 0; id < len(s.ipList); id++ {
+		if id != int(s.serverId) {
+			s.next_indices[id] = s.commitIndex + 1
+		}
+	}
 	return &Success{Flag: true}, nil
 }
 
@@ -250,13 +263,12 @@ func (s *RaftSurfstore) SendHeartbeat(ctx context.Context, _ *emptypb.Empty) (*S
 			if int64(idx) == s.serverId {
 				continue
 			}
-
+			entryIdx := s.next_indices[idx]
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				return nil, nil
 			}
 			client := NewRaftSurfstoreClient(conn)
-			entryIdx := s.commitIndex + 1
 			var prevlogterm int64
 			if entryIdx-1 < 0 {
 				prevlogterm = 0

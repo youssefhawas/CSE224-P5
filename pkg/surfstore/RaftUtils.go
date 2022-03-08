@@ -68,6 +68,11 @@ func NewRaftServer(id int64, ips []string, blockStoreAddr string) (*RaftSurfstor
 		notCrashedCond: sync.NewCond(&isCrashedMutex),
 		isCrashedMutex: isCrashedMutex,
 	}
+	next_indices := make([]int64, len(server.ipList))
+	for idx := range next_indices {
+		next_indices[idx] = 0
+	}
+	server.next_indices = next_indices
 
 	return &server, nil
 }
