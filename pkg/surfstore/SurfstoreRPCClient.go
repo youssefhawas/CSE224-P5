@@ -2,6 +2,8 @@ package surfstore
 
 import (
 	context "context"
+	"fmt"
+	"strings"
 	"time"
 
 	grpc "google.golang.org/grpc"
@@ -73,61 +75,79 @@ func (surfClient *RPCClient) HasBlocks(blockHashesIn []string, blockStoreAddr st
 }
 
 func (surfClient *RPCClient) GetFileInfoMap(serverFileInfoMap *map[string]*FileMetaData) error {
-	conn, err := grpc.Dial(surfClient.MetaStoreAddrs[0], grpc.WithInsecure())
-	if err != nil {
-		return err
-	}
-	c := NewRaftSurfstoreClient(conn)
+	for _, addr := range surfClient.MetaStoreAddrs {
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+		if err != nil {
+			return err
+		}
+		c := NewRaftSurfstoreClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	remote_index, err := c.GetFileInfoMap(ctx, &emptypb.Empty{})
-	if err != nil {
-		conn.Close()
-		return err
-	}
-	*serverFileInfoMap = remote_index.FileInfoMap
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		remote_index, err := c.GetFileInfoMap(ctx, &emptypb.Empty{})
+		if err != nil {
+			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) || strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				conn.Close()
+				continue
+			}
+			return err
+		}
+		*serverFileInfoMap = remote_index.FileInfoMap
 
-	return conn.Close()
+		return conn.Close()
+	}
+	return fmt.Errorf("NO LEADER")
 }
 
 func (surfClient *RPCClient) UpdateFile(fileMetaData *FileMetaData, latestVersion *int32) error {
-	conn, err := grpc.Dial(surfClient.MetaStoreAddrs[0], grpc.WithInsecure())
-	if err != nil {
-		return err
+	for _, addr := range surfClient.MetaStoreAddrs {
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+		if err != nil {
+			return err
+		}
+		c := NewRaftSurfstoreClient(conn)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		server_version, err := c.UpdateFile(ctx, fileMetaData)
+		if err != nil {
+			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) || strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				conn.Close()
+				continue
+			}
+			return err
+		}
+
+		*latestVersion = server_version.Version
+
+		return conn.Close()
 	}
-	c := NewRaftSurfstoreClient(conn)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	server_version, err := c.UpdateFile(ctx, fileMetaData)
-	if err != nil {
-		conn.Close()
-		return err
-	}
-
-	*latestVersion = server_version.Version
-
-	return conn.Close()
+	return fmt.Errorf("NO LEADER")
 }
 
 func (surfClient *RPCClient) GetBlockStoreAddr(blockStoreAddr *string) error {
-	conn, err := grpc.Dial(surfClient.MetaStoreAddrs[0], grpc.WithInsecure())
-	if err != nil {
-		return err
-	}
-	c := NewRaftSurfstoreClient(conn)
+	for _, addr := range surfClient.MetaStoreAddrs {
+		conn, err := grpc.Dial(addr, grpc.WithInsecure())
+		if err != nil {
+			return err
+		}
+		c := NewRaftSurfstoreClient(conn)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	addr, err := c.GetBlockStoreAddr(ctx, &emptypb.Empty{})
-	if err != nil {
-		conn.Close()
-		return err
-	}
-	*blockStoreAddr = addr.Addr
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		addr, err := c.GetBlockStoreAddr(ctx, &emptypb.Empty{})
+		if err != nil {
+			if strings.Contains(err.Error(), ERR_NOT_LEADER.Error()) || strings.Contains(err.Error(), ERR_SERVER_CRASHED.Error()) {
+				conn.Close()
+				continue
+			}
+			return err
+		}
+		*blockStoreAddr = addr.Addr
 
-	return conn.Close()
+		return conn.Close()
+	}
+	return fmt.Errorf("NO LEADER")
 }
 
 // This line guarantees all method for RPCClient are implemented

@@ -2,13 +2,9 @@ package surfstore
 
 import (
 	"bufio"
-	"net"
-
-	//	"google.golang.org/grpc"
 	"io"
 	"log"
-
-	//	"net"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -18,7 +14,6 @@ import (
 )
 
 func LoadRaftConfigFile(filename string) (ipList []string) {
-	SURF_CLIENT := "X"
 	configFD, e := os.Open(filename)
 	if e != nil {
 		log.Fatal("Error Open config file:", e)
@@ -31,7 +26,7 @@ func LoadRaftConfigFile(filename string) (ipList []string) {
 	for index := 0; ; index++ {
 		lineContent, _, e := configReader.ReadLine()
 		if e != nil && e != io.EOF {
-			log.Fatal(SURF_CLIENT, "Error During Reading Config", e)
+			log.Fatal("x", "Error During Reading Config", e)
 		}
 
 		if e == io.EOF {
@@ -58,6 +53,13 @@ func NewRaftServer(id int64, ips []string, blockStoreAddr string) (*RaftSurfstor
 
 	server := RaftSurfstore{
 		// TODO initialize any fields you add here
+		ip:       ips[id],
+		ipList:   ips,
+		serverId: id,
+
+		commitIndex: -1,
+		lastApplied: -1,
+
 		isLeader:       false,
 		term:           0,
 		metaStore:      NewMetaStore(blockStoreAddr),
@@ -75,9 +77,10 @@ func ServeRaftServer(server *RaftSurfstore) error {
 	s := grpc.NewServer()
 	RegisterRaftSurfstoreServer(s, server)
 
-	l, err := net.Listen("tcp", server.ip)
-	if err != nil {
-		return err
+	l, e := net.Listen("tcp", server.ip)
+	if e != nil {
+		return e
 	}
+
 	return s.Serve(l)
 }
