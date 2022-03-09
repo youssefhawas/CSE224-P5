@@ -2,6 +2,7 @@ package surfstore
 
 import (
 	context "context"
+	"fmt"
 	"math"
 	"strings"
 	"sync"
@@ -131,6 +132,7 @@ func (s *RaftSurfstore) UpdateFile(ctx context.Context, filemeta *FileMetaData) 
 		success := <-committed
 		if success {
 			s.lastApplied++
+			fmt.Println(s.serverId, filemeta)
 			return s.metaStore.UpdateFile(ctx, filemeta)
 		}
 
