@@ -153,6 +153,9 @@ func (s *RaftSurfstore) attemptCommit() {
 	commitCount := 1
 	for {
 		// TODO handle crashed nodes
+		if s.isCrashed {
+			return
+		}
 		commit := <-commitChan
 		if commit != nil && commit.Success {
 			commitCount++
@@ -167,6 +170,9 @@ func (s *RaftSurfstore) attemptCommit() {
 
 func (s *RaftSurfstore) commitEntry(serverIdx, entryIdx int64, commitChan chan *AppendEntryOutput) {
 	for {
+		if s.isCrashed {
+			return
+		}
 		entryIdx = s.next_indices[serverIdx]
 		addr := s.ipList[serverIdx]
 		conn, err := grpc.Dial(addr, grpc.WithInsecure())
